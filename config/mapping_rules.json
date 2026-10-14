@@ -1,0 +1,43 @@
+{
+  "salary": {
+    "employee_id": ["msnv", "mã nv", "mã nhân viên", "ma_nv", "manv", "mã số nv", "mã"],
+    "full_name": ["họ và tên", "họ tên", "tên nhân viên", "ho_ten", "họ và tên nhân viên"],
+    "department": ["tên phòng ban", "phòng ban", "bộ phận", "đơn vị", "phong_ban", "tên đơn vị"],
+    "resident_status": ["tình trạng cư trú", "cư trú", "cá nhân cư trú", "cu_tru", "loại hđlđ"],
+    "salary_monthly": ["tiền lương", "lương tháng", "lương chức danh", "lương cơ bản", "lương thời gian", "luong_thang", "lương chính"],
+    "salary_quarterly": ["tiền lương bổ sung", "lương bổ sung", "lương quý", "lương hiệu quả", "thưởng quý", "luong_quy", "lương t13"],
+    "other_income": ["thu nhập khác", "thunhậpkhác", "các khoản khác", "thu nhập bổ sung", "thu_nhap_khac", "thưởng khác"],
+    "tax_exempt_allowance": ["phụ cấp không chịu thuế", "phụ cấp không thuế", "phụ cấp miễn thuế", "pc không thuế", "phu_cap_khong_thue", "khoản không tính thuế"],
+    "insurance_deduction": ["tiền bảo hiểm(bhxh,bhyt,bhtn)", "tiền bảo hiểm", "trừ hưu trí", "bảo hiểm bắt buộc", "trừ bh", "bhxh_bhyt_bhtn", "bảo hiểm", "giam_tru_bao_hiem"],
+    "personal_relief": ["giảm trừ bản thân", "gt bản thân", "giam_tru_ban_than"],
+    "dependent_relief": ["giảm trừ gia cảnh", "gt người phụ thuộc", "giam_tru_gia_canh", "người phụ thuộc", "số npt"],
+    "progressive_tax": ["số thuế phải nộp", "sốthuếphảinộp", "thuế tncn lũy tiến", "thuế tncn cnv", "thuế lũy tiến", "thue_luy_tien", "thuế cnv", "thuế tncn"],
+    "income_10_percent": ["thu nhập 10%", "thu nhập vãng lai", "tn chịu thuế 10%", "thu_nhap_10_phan_tram"],
+    "tax_10_percent": ["thuế 10%", "thuế vãng lai", "thuế tncn 10%", "thue_10_phan_tram", "thuế khấu trừ 10%"],
+    "taxable_income": ["thu nhập chịu thuế", "thunhậpchịuthuế", "tổngthunhậpchịuthuế", "tổng thu nhập chịu thuế"]
+  },
+  "pr025": {
+    "code": ["mã chỉ tiêu", "ma_chi_tieu", "code"],
+    "item_name": ["chỉ tiêu", "tên chỉ tiêu", "nội dung", "diễn giải", "ten_chi_tieu"],
+    "amount": ["số người/số tiền", "số tiền", "giá trị", "so_tien", "số lượng / số tiền", "thành tiền", "số liệu"]
+  },
+  "pr027": {
+    "employee_id": ["msnv", "mã nv", "mã nhân viên", "mã phòng ban"],
+    "full_name": ["họ và tên", "họ tên", "tên nhân viên"],
+    "department": ["tên phòng ban", "phòng ban"],
+    "code": ["mã chỉ tiêu", "chỉ tiêu"],
+    "item_name": ["diễn giải", "nội dung", "tên chỉ tiêu"],
+    "progressive_tax": ["thuế lũy tiến", "thuế cnv", "thue_luy_tien"],
+    "tax_10_percent": ["thuế 10%", "thuế vãng lai", "thue_10_phan_tram"],
+    "amount": ["số thuế phải nộp", "sốthuếphảinộp", "thuế khấu trừ", "tổng thuế", "số tiền", "giá trị"]
+  },
+  "gl_3335": {
+    "date": ["ngày", "ngày ht", "ngày chứng từ", "ngay_ct", "ngày ghi sổ"],
+    "doc_no": ["số", "số chứng từ", "số ct", "so_ct", "số hiệu"],
+    "description": ["diễn giải", "nội dung", "dien_giai", "nội dung nghiệp vụ"],
+    "debit_account": ["tk nợ", "tk no", "tài khoản nợ", "tk đối ứng nợ"],
+    "credit_account": ["tk có", "tk co", "tài khoản có", "tk đối ứng có"],
+    "debit_amount": ["nợ", "phát sinh nợ", "số tiền nợ", "ps_no", "phát sinh nợ vnd"],
+    "credit_amount": ["có", "phát sinh có", "số tiền có", "ps_co", "phát sinh có vnd"]
+  }
+}

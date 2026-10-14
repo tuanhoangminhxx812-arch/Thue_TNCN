@@ -1,0 +1,31 @@
+# ==============================================================================
+# CẤU HÌNH HỆ THỐNG KIỂM DÒ THUẾ TNCN
+# ==============================================================================
+
+# Thông tin chung
+company_name: "TỔNG CÔNG TY ĐIỆN LỰC TP. HỒ CHÍ MINH - CÔNG TY ĐIỆN LỰC CHỢ LỚN"
+tax_code: "0300951114"
+report_period: "Tháng 09/2026"
+
+# Cấu hình đường dẫn chạy offline
+paths:
+  input_dir: "01_DAU_VAO"
+  ref_dir: "02_THAM_KHAO"
+  output_dir: "03_DAU_RA"
+  mapping_rules: "config/mapping_rules.json"
+
+# Tên file mặc định trong thư mục 01_DAU_VAO (khi chạy script offline)
+input_files:
+  salary: "01_DAU_VAO/Bang_Luong_Tong_CBCNV.xlsx"
+  pr025: "01_DAU_VAO/To_Khai_Thue_PR025.xlsx"
+  pr027: "01_DAU_VAO/To_Khai_Thue_PR027.xlsx"
+  gl_3335: "01_DAU_VAO/So_Cai_TK_3335.xlsx"
+
+# Cấu hình xuất báo cáo Excel
+output:
+  report_prefix: "Bao_Cao_Kiem_Do_Thue_TNCN"
+  date_format: "%Y%m%d_%H%M%S"
+
+# Ngưỡng cảnh báo sai lệch (VND)
+thresholds:
+  warning_tolerance: 1000 # Cho phép làm tròn tối đa 1,000 VND (nếu có)
