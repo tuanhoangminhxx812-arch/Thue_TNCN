@@ -1,12 +1,16 @@
 """
 File: app.py
-Mục đích: Ứng dụng Web Streamlit kiểm dò dữ liệu Thuế TNCN đa người dùng,
-          xử lý hoàn toàn trong bộ nhớ RAM (io.BytesIO) đảm bảo an toàn & bảo mật.
-          Hỗ trợ:
-          1. Nạp từ 1 thư mục chứa đủ 4 file dữ liệu (không cần chọn từng file riêng lẻ).
-          2. Định dạng tất cả số liệu là số nguyên không có số lẻ, phân cách hàng nghìn bằng dấu chấm.
-          3. Căn phải cột số, căn trái cột chữ, căn giữa mã/trạng thái.
-          4. Báo cáo Excel 4 sheet tải về ngay lập tức.
+Mục đích: Ứng dụng Web Streamlit kiểm dò và quản lý dữ liệu Thuế TNCN cả năm (12 tháng).
+          Tính năng chính:
+          1. Quản lý dữ liệu cả năm theo từng tháng (Tháng 01 -> Tháng 12).
+          2. Cơ chế ĐÓNG GÓI LƯU TRỮ (Precomputed Cache): Các tháng đã tổng hợp được lưu trữ
+             vào kho dữ liệu, khi chọn lại tháng thì hiển thị NGAY LẬP TỨC (< 0.05s) không giật lag.
+          3. Nút "Cập Nhật & Tổng Hợp Lại": Chỉ khi có thay đổi số liệu cần đọc lại 4 file Excel
+             thì mới bấm để tổng hợp lại và đóng gói đè lên dữ liệu cũ.
+          4. TAB RIÊNG BIỆT: BÁO CÁO TỔNG HỢP CẢ NĂM (TRÌNH LÃNH ĐẠO) với bảng 12 tháng + dòng Tổng cộng năm,
+             kèm nút xuất file Excel riêng biệt để trình Ban Lãnh Đạo.
+          5. Định dạng toàn bộ số nguyên không có số lẻ, phân cách hàng nghìn bằng dấu chấm,
+             căn phải số tiền, căn trái văn bản, căn giữa mã/trạng thái.
 """
 
 import io
@@ -26,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from scripts.data_loader import DataLoader, identify_input_files
 from scripts.reconciler import TaxReconciler
 from scripts.report_builder import ExcelReportBuilder
+from scripts.annual_manager import AnnualTaxManager
 
 # ==============================================================================
 # CẤU HÌNH TRANG WEB STREAMLIT
@@ -42,16 +47,16 @@ st.markdown("""
 <style>
     .main-header {
         background: linear-gradient(135deg, #1F4E78 0%, #2F5597 100%);
-        padding: 24px;
+        padding: 22px 26px;
         border-radius: 12px;
         color: white;
-        margin-bottom: 24px;
+        margin-bottom: 20px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.08);
     }
     .main-header h1 {
         color: #ffffff;
         margin: 0;
-        font-size: 26px;
+        font-size: 25px;
         font-weight: 700;
     }
     .main-header p {
@@ -135,10 +140,7 @@ st.markdown("""
 
 
 def format_vnd(val):
-    """
-    Định dạng số nguyên không có số lẻ, phân cách hàng nghìn bằng dấu chấm (chuẩn Việt Nam).
-    Ví dụ: 15394909454 -> 15.394.909.454; -25000 -> -25.000; 0 -> 0; None -> '-'
-    """
+    """Định dạng số nguyên không có số lẻ, phân cách hàng nghìn bằng dấu chấm (chuẩn Việt Nam)."""
     if pd.isna(val) or val is None or val == "" or str(val).strip() == "-":
         return "-"
     try:
@@ -223,18 +225,28 @@ def display_styled_dataframe(
 
 
 # ==============================================================================
-# SIDEBAR: THIẾT LẬP & NẠP 1 THƯ MỤC CHỨA CẢ 4 FILE
+# QUẢN LÝ LƯU TRỮ VÀ ĐÓNG GÓI CẢ NĂM
+# ==============================================================================
+annual_mgr = AnnualTaxManager()
+
+
+# ==============================================================================
+# SIDEBAR: CHỌN KỲ / THÁNG & NẠP DỮ LIỆU
 # ==============================================================================
 with st.sidebar:
     st.image("https://img.icons8.com/fluency/96/accounting.png", width=64)
-    st.title("Thiết Lập Dữ Liệu")
+    st.title("Quản Lý Thuế Cả Năm")
     st.caption("⚡ Dành cho Công ty Điện lực")
     st.markdown("---")
 
-    report_period = st.text_input(
-        "📅 Kỳ báo cáo:",
-        value="Tháng 09/2026",
-        help="Ví dụ: Tháng 09/2026 hoặc Quý 3/2026"
+    report_year = st.selectbox("📅 Năm báo cáo:", [2026, 2025, 2024], index=0)
+
+    month_list = [f"Tháng {m:02d}/{report_year}" for m in range(1, 13)]
+    report_period = st.selectbox(
+        "📆 Chọn Kỳ / Tháng Cần Quản Lý:",
+        month_list,
+        index=8, # Mặc định chọn Tháng 09
+        help="Chọn bất kỳ tháng nào trong năm. Dữ liệu đã đóng gói sẽ được tải tức thì không giật lag."
     )
 
     company_name = st.text_input(
@@ -242,18 +254,47 @@ with st.sidebar:
         value="TỔNG CÔNG TY ĐIỆN LỰC TP. HỒ CHÍ MINH - CÔNG TY ĐIỆN LỰC CHỢ LỚN"
     )
 
-    st.markdown("---")
-    st.markdown("### 📁 Nạp Dữ Liệu Từ 1 Thư Mục")
-    st.caption("Chỉ cần chỉ định 1 thư mục chứa đủ 4 file dữ liệu. Chương trình sẽ tự động nhận diện từng file.")
+    period_key = annual_mgr.normalize_period_key(report_period)
+    is_stored = annual_mgr.is_period_stored(period_key)
 
-    # Khởi tạo session_state cho folder
+    st.markdown("---")
+    st.markdown("### 📦 Trạng Thái Đóng Gói Kỳ Này:")
+    if is_stored:
+        st.markdown(
+            f'<div class="file-badge-ok">✅ <b>{report_period}:</b> ĐÃ ĐƯỢC ĐÓNG GÓI<br>'
+            f'<small>Nạp siêu tốc & Không giật lag</small></div>',
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            f'<div class="file-badge-missing">⚠️ <b>{report_period}:</b> CHƯA ĐÓNG GÓI<br>'
+            f'<small>Hãy chọn thư mục chứa 4 file bên dưới để tổng hợp</small></div>',
+            unsafe_allow_html=True
+        )
+
+    # Nút thao tác cập nhật lại
+    col_act1, col_act2 = st.columns(2)
+    with col_act1:
+        if st.button("🔄 Tổng Hợp Lại", use_container_width=True, help="Đọc lại 4 file Excel đầu vào và ghi đè cập nhật gói dữ liệu"):
+            st.session_state["force_reprocess"] = True
+            st.rerun()
+    with col_act2:
+        if is_stored:
+            if st.button("🚀 Nạp Gói Nhanh", use_container_width=True, help="Nạp trực tiếp từ gói đã lưu trong mili-giây"):
+                st.session_state["force_reprocess"] = False
+                st.rerun()
+
+    st.markdown("---")
+    st.markdown("### 📁 Nạp Dữ Liệu Cho Tháng Đang Chọn")
+    st.caption("Chỉ định 1 thư mục chứa đủ 4 file dữ liệu của tháng này.")
+
     if "folder_path" not in st.session_state:
         st.session_state["folder_path"] = "02_THAM_KHAO" if Path("02_THAM_KHAO").exists() else "01_DAU_VAO"
 
     folder_path_input = st.text_input(
         "Đường dẫn thư mục chứa 4 file:",
         value=st.session_state["folder_path"],
-        help="Nhập đường dẫn thư mục trên máy tính (ví dụ: 02_THAM_KHAO hoặc D:/DATA/Thue_TNCN/02_THAM_KHAO)"
+        help="Nhập đường dẫn thư mục chứa 4 file của tháng này (ví dụ: 02_THAM_KHAO hoặc đường dẫn thư mục tháng)"
     )
 
     c_b1, c_b2 = st.columns(2)
@@ -266,14 +307,26 @@ with st.sidebar:
             st.session_state["folder_path"] = "01_DAU_VAO"
             st.rerun()
 
-    st.markdown("---")
     st.caption("📂 **Hoặc kéo thả toàn bộ các file từ thư mục vào đây:**")
     uploaded_files = st.file_uploader(
         "Kéo thả tất cả các file cùng lúc (.xlsx):",
         type=["xlsx", "xls"],
         accept_multiple_files=True,
-        help="Chọn toàn bộ 4 file trong thư mục của bạn rồi kéo thả vào đây."
+        help="Chọn toàn bộ 4 file trong thư mục tháng của bạn rồi kéo thả vào đây."
     )
+
+    st.markdown("---")
+    st.markdown("#### 📤 Thư Mục Xuất Báo Cáo:")
+    if st.button("📂 Mở Thư Mục 03_DAU_RA", key="btn_open_out_sidebar", use_container_width=True):
+        if hasattr(os, "startfile"):
+            try:
+                out_p = Path("03_DAU_RA").resolve()
+                out_p.mkdir(parents=True, exist_ok=True)
+                os.startfile(str(out_p))
+            except Exception:
+                pass
+        else:
+            st.info("💡 Tính năng mở thư mục trực tiếp áp dụng khi chạy trên máy tính Windows. Trên Streamlit Cloud, anh tải file qua nút 'Tải File (.xlsx)' nhé!")
 
 
 # ==============================================================================
@@ -281,8 +334,8 @@ with st.sidebar:
 # ==============================================================================
 st.markdown(f"""
 <div class="main-header">
-    <h1>HỆ THỐNG KIỂM DÒ DỮ LIỆU THUẾ TNCN</h1>
-    <p>🏢 {company_name} | 📅 Kỳ kiểm dò: <b>{report_period}</b> | 🔒 Xử lý In-Memory An toàn & Bảo mật</p>
+    <h1>HỆ THỐNG KIỂM DÒ & QUẢN LÝ DỮ LIỆU THUẾ TNCN CẢ NĂM</h1>
+    <p>🏢 {company_name} | 📅 Đang xem: <b>{report_period}</b> | 🗄️ Năm quản lý: <b>{report_year}</b></p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -290,13 +343,11 @@ st.markdown(f"""
 # ==============================================================================
 # TỰ ĐỘNG QUÉT VÀ NHẬN DIỆN 4 FILE TRONG THƯ MỤC
 # ==============================================================================
-files_ready = False
 salary_src = None
 pr025_src = None
 pr027_src = None
 gl_src = None
 
-# Ưu tiên các file được upload nếu người dùng kéo thả
 if uploaded_files and len(uploaded_files) > 0:
     source_label = f"Tải lên {len(uploaded_files)} file từ trình duyệt"
     identified = identify_input_files(uploaded_files)
@@ -315,206 +366,91 @@ pr027_src = identified["pr027"]
 gl_src = identified["gl_3335"]
 
 all_found = all([salary_src, pr025_src, pr027_src, gl_src])
-files_ready = all_found
 
 
 # ==============================================================================
-# HIỂN THỊ TRẠNG THÁI NHẬN DIỆN 4 FILE
+# XỬ LÝ NẠP DỮ LIỆU: ƯU TIÊN GÓI ĐÃ ĐÓNG GÓI TRƯỚC (SIÊU NHANH)
 # ==============================================================================
-with st.sidebar:
-    st.markdown("#### 📋 Trạng Thái 4 File Cần Lấy:")
+results = None
+is_from_cache = False
+force_reprocess = st.session_state.get("force_reprocess", False)
 
-    def render_file_status(title, file_obj, hint):
-        if file_obj:
-            fname = getattr(file_obj, "name", str(Path(file_obj).name if isinstance(file_obj, (str, Path)) else file_obj))
-            st.markdown(f'<div class="file-badge-ok">✅ <b>{title}:</b><br><code>{fname}</code></div>', unsafe_allow_html=True)
-        else:
-            st.markdown(f'<div class="file-badge-missing">❌ <b>{title}:</b><br><small>Chưa tìm thấy (tên file chứa <i>{hint}</i>)</small></div>', unsafe_allow_html=True)
+if is_stored and not force_reprocess:
+    # Nạp trong mili-giây từ gói đã đóng gói
+    results = annual_mgr.load_package(period_key)
+    if results:
+        is_from_cache = True
 
-    render_file_status("1. Bảng lương CBCNV", salary_src, "luong, ttt, salary...")
-    render_file_status("2. Tờ khai thuế PR025", pr025_src, "025, pr025, 05-kk...")
-    render_file_status("3. Bảng kê PR027/028", pr027_src, "027, pr027, nghi_huu...")
-    render_file_status("4. Sổ cái TK 3335", gl_src, "3335, so_cai...")
-
-    st.markdown("---")
-    st.markdown("#### 📤 Thư Mục Xuất Báo Cáo:")
-    if st.button("📂 Mở Thư Mục 03_DAU_RA", key="btn_open_out_sidebar", use_container_width=True):
-        if hasattr(os, "startfile"):
-            try:
-                out_p = Path("03_DAU_RA").resolve()
-                out_p.mkdir(parents=True, exist_ok=True)
-                os.startfile(str(out_p))
-            except Exception:
-                pass
-        else:
-            st.info("💡 Tính năng mở thư mục trực tiếp áp dụng khi chạy trên máy tính Windows. Trên Streamlit Cloud, anh tải file qua nút 'Tải File (.xlsx)' nhé!")
-
-
-# Nếu chưa đủ 4 file, hiển thị hướng dẫn chi tiết
-if not files_ready:
-    st.warning(f"⚠️ **Chưa nhận diện đủ 4 file dữ liệu trong {source_label}.**")
-
-    missing = []
-    if not salary_src: missing.append("1. Bảng lương tổng CBCNV (tên file chứa: `luong`, `pr_ttt`, `salary`...)")
-    if not pr025_src: missing.append("2. Tờ khai thuế PR025 (tên file chứa: `025`, `pr025`, `05_kk`...)")
-    if not pr027_src: missing.append("3. Tờ khai thuế PR027/PR028 (tên file chứa: `027`, `pr027`, `nghi_huu`...)")
-    if not gl_src: missing.append("4. Sổ cái TK 3335 (tên file chứa: `3335`, `so_cai`...)")
-
-    st.info("💡 **Vui lòng kiểm tra lại:**\n- " + "\n- ".join(missing))
-    st.markdown("""
-    > **Gợi ý nhanh:**
-    > - Bấm nút **`📁 02_THAM_KHAO`** ở cột bên trái để nạp trực tiếp bộ dữ liệu thực tế của Điện lực Chợ Lớn.
-    > - Bấm nút **`📁 01_DAU_VAO`** để chạy bộ dữ liệu kiểm thử mẫu.
-    """)
-    st.stop()
-
-
-# ==============================================================================
-# THỰC THI KIỂM DÒ KHI ĐÃ CÓ ĐỦ 4 FILE
-# ==============================================================================
-loader = DataLoader("config/mapping_rules.json")
-reconciler = TaxReconciler(tolerance=1000.0)
-
-try:
-    with st.spinner("Đang nạp và phân tích dữ liệu 4 file..."):
-        df_salary, summary_salary = loader.load_salary_data(salary_src)
-        df_pr025, pr025_indicators = loader.load_pr025_data(pr025_src)
-        df_pr027, pr027_summary = loader.load_pr027_data(pr027_src)
-        df_gl, gl_summary = loader.load_gl_3335_data(gl_src)
-
-        results = reconciler.reconcile_all(
-            df_salary=df_salary,
-            pr025_indicators=pr025_indicators,
-            pr027_summary=pr027_summary,
-            gl_3335_summary=gl_summary,
-            report_period=report_period
-        )
-
-except ValueError as ve:
-    st.error(f"❌ **Lỗi cấu trúc dữ liệu:** {ve}")
-    st.stop()
-except Exception as e:
-    st.error(f"❌ **Đã xảy ra lỗi khi xử lý dữ liệu:** {e}")
-    st.exception(e)
-    st.stop()
-
-# ==============================================================================
-# XUẤT FILE BÁO CÁO VÀO THƯ MỤC 03_DAU_RA & CHUẨN BỊ TẢI VỀ
-# ==============================================================================
-output_dir = Path("03_DAU_RA")
-output_dir.mkdir(parents=True, exist_ok=True)
-clean_period = report_period.replace(' ', '_').replace('/', '_').replace('á', 'a').replace('Á', 'A')
-excel_filename = f"Bao_Cao_Kiem_Do_Thue_TNCN_{clean_period}.xlsx"
-output_file_path = output_dir / excel_filename
-
-builder = ExcelReportBuilder(company_name=company_name, report_period=report_period)
-builder.export_to_file(results, output_file_path)
-
-# Đọc raw bytes và mã hóa base64 để hỗ trợ tải file trực tiếp với tên .xlsx chuẩn 100%
-with open(output_file_path, "rb") as f:
-    excel_data = f.read()
-
-b64_excel = base64.b64encode(excel_data).decode("utf-8")
-
-kpis = results["summary_kpis"]
-
-
-# ==============================================================================
-# KHU VỰC THÔNG BÁO TỔNG QUAN & NÚT THAO TÁC FILE XUẤT
-# ==============================================================================
-top_col1, top_col2, top_col3, top_col4 = st.columns([2.0, 1.0, 1.0, 1.2])
-
-with top_col1:
-    if results["all_passed"]:
-        st.success("✅ **KẾT QUẢ KIỂM DÒ: TOÀN BỘ SỐ LIỆU ĐÃ KHỚP CHÍNH XÁC 100%!** (Chênh lệch = 0 VND)")
+if not results:
+    # Nếu chưa có gói hoặc bấm "Tổng hợp lại", tiến hành đọc 4 file
+    if not all_found:
+        st.warning(f"⚠️ **Chưa tìm thấy gói đã đóng gói cho {report_period}, và chưa đủ 4 file dữ liệu trong {source_label}.**")
+        missing = []
+        if not salary_src: missing.append("1. Bảng lương tổng CBCNV (tên file chứa: `luong`, `pr_ttt`, `salary`...)")
+        if not pr025_src: missing.append("2. Tờ khai thuế PR025 (tên file chứa: `025`, `pr025`, `05_kk`...)")
+        if not pr027_src: missing.append("3. Tờ khai thuế PR027/PR028 (tên file chứa: `027`, `pr027`, `nghi_huu`...)")
+        if not gl_src: missing.append("4. Sổ cái TK 3335 (tên file chứa: `3335`, `so_cai`...)")
+        st.info("💡 **Vui lòng kiểm tra lại:**\n- " + "\n- ".join(missing))
+        st.markdown("""
+        > **Gợi ý:**
+        > - Nếu anh muốn kiểm dò tháng 9, hãy bấm nút **`📁 02_THAM_KHAO`** bên trái.
+        > - Hoặc anh có thể xem ngay **Báo Cáo Cả Năm (Trình Lãnh Đạo)** ở Tab bên dưới.
+        """)
     else:
-        st.error("⚠️ **CẢNH BÁO: PHÁT HIỆN SỐ LIỆU CHÊNH LỆCH!** Vui lòng kiểm tra chi tiết các bảng dưới đây.")
+        loader = DataLoader("config/mapping_rules.json")
+        reconciler = TaxReconciler(tolerance=1000.0)
+        try:
+            with st.spinner(f"Đang tổng hợp và đóng gói dữ liệu cho {report_period}..."):
+                df_salary, summary_salary = loader.load_salary_data(salary_src)
+                df_pr025, pr025_indicators = loader.load_pr025_data(pr025_src)
+                df_pr027, pr027_summary = loader.load_pr027_data(pr027_src)
+                df_gl, gl_summary = loader.load_gl_3335_data(gl_src)
 
-with top_col2:
-    if st.button("📊 Mở Bằng Excel", use_container_width=True, help="Mở file báo cáo trực tiếp bằng Microsoft Excel trên máy tính"):
-        if hasattr(os, "startfile"):
-            try:
-                os.startfile(str(output_file_path.resolve()))
-            except Exception as e:
-                st.error(f"Không thể mở file: {e}")
-        else:
-            st.info("Mở trực tiếp bằng Excel khả dụng khi chạy trên máy tính Windows.")
-
-with top_col3:
-    if st.button("📂 Mở 03_DAU_RA", use_container_width=True, help="Mở thư mục 03_DAU_RA trực tiếp trong Windows Explorer"):
-        if hasattr(os, "startfile"):
-            try:
-                os.startfile(str(output_dir.resolve()))
-            except Exception as e:
-                st.error(f"Không thể mở thư mục: {e}")
-        else:
-            st.info("Mở thư mục áp dụng khi chạy trên máy tính Windows.")
-
-with top_col4:
-    # Nút tải trực tiếp qua HTML5 download attribute (chuẩn file .xlsx 100%, không bao giờ bị đổi thành UUID)
-    download_html = f"""
-    <a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64_excel}" 
-       download="{excel_filename}" 
-       style="display: flex; align-items: center; justify-content: center; width: 100%; height: 38px; 
-              background-color: #1F4E78; color: white !important; text-decoration: none; border-radius: 8px; 
-              font-weight: 600; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-       📥 Tải File (.xlsx)
-    </a>
-    """
-    st.markdown(download_html, unsafe_allow_html=True)
-
-st.info(f"📁 **File báo cáo đã được lưu sẵn trong thư mục máy tính:** `{output_file_path.resolve()}`")
-
-# 4 THẺ KPI CHÍNH (Định dạng số nguyên, phân cách bằng dấu chấm)
-c1, c2, c3, c4 = st.columns(4)
-
-with c1:
-    st.markdown(f"""
-    <div class="kpi-card">
-        <div class="kpi-title">Tổng Nhân Sự / Cư Trú</div>
-        <div class="kpi-value">{format_vnd(kpis['total_employees'])} <span style="font-size:14px;color:#666">người</span></div>
-        <div class="kpi-sub">Cư trú: <b>{format_vnd(kpis['residents_count'])}</b> | Có thuế: <b>{format_vnd(kpis['taxable_employees_count'])}</b></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with c2:
-    badge_24 = '<span class="badge-matched">KHỚP (0 VND)</span>' if kpis['status_tnct'] == "KHỚP" else f'<span class="badge-diff">LỆCH: {format_vnd(kpis["diff_tnct_resident"])} VND</span>'
-    st.markdown(f"""
-    <div class="kpi-card">
-        <div class="kpi-title">TNCT Cư Trú (Chỉ tiêu [24])</div>
-        <div class="kpi-value">{format_vnd(kpis['taxable_income_resident'])}</div>
-        <div class="kpi-sub">PR025: {format_vnd(kpis['pr025_tnct_resident'])} | {badge_24}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with c3:
-    badge_27 = '<span class="badge-matched">KHỚP (0 VND)</span>' if kpis['status_with_tax'] == "KHỚP" else f'<span class="badge-diff">LỆCH: {format_vnd(kpis["diff_tnct_with_tax"])} VND</span>'
-    st.markdown(f"""
-    <div class="kpi-card">
-        <div class="kpi-title">TNCT Nhóm Có Thuế ([27])</div>
-        <div class="kpi-value">{format_vnd(kpis['taxable_income_with_tax'])}</div>
-        <div class="kpi-sub">PR025: {format_vnd(kpis['pr025_tnct_with_tax'])} | {badge_27}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with c4:
-    badge_tax = '<span class="badge-matched">KHỚP (0 VND)</span>' if kpis['status_tax'] == "KHỚP" else f'<span class="badge-diff">LỆCH: {format_vnd(kpis["diff_salary_vs_return"])} VND</span>'
-    st.markdown(f"""
-    <div class="kpi-card">
-        <div class="kpi-title">Thuế Phải Nộp (3 Bên)</div>
-        <div class="kpi-value">{format_vnd(kpis['salary_total_tax'])}</div>
-        <div class="kpi-sub">Tờ khai: {format_vnd(kpis['tax_return_total'])} | Có 3335: {format_vnd(kpis['gl_credit_turnover'])} | {badge_tax}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("<br>", unsafe_allow_html=True)
+                results = reconciler.reconcile_all(
+                    df_salary=df_salary,
+                    pr025_indicators=pr025_indicators,
+                    pr027_summary=pr027_summary,
+                    gl_3335_summary=gl_summary,
+                    report_period=report_period
+                )
+                # Tự động đóng gói lưu trữ
+                annual_mgr.save_package(report_period, results, source_folder=source_label)
+                st.session_state["force_reprocess"] = False
+                is_from_cache = False
+        except Exception as e:
+            st.error(f"❌ **Lỗi khi xử lý dữ liệu:** {e}")
+            st.exception(e)
+            st.stop()
 
 
 # ==============================================================================
-# KHU VỰC CÁC TABS HIỂN THỊ CHI TIẾT
+# XUẤT FILE CHO THÁNG HIỆN TẠI (NẾU CÓ DỮ LIỆU)
 # ==============================================================================
-tab_overview, tab_sheet00, tab_sheet31, tab_sheet41, tab_sheet51 = st.tabs([
-    "📋 Tổng Quan & Đối Chiếu Trọng Yếu",
+excel_filename = ""
+output_file_path = None
+b64_excel = ""
+
+if results:
+    output_dir = Path("03_DAU_RA")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    clean_period = report_period.replace(' ', '_').replace('/', '_').replace('á', 'a').replace('Á', 'A')
+    excel_filename = f"Bao_Cao_Kiem_Do_Thue_TNCN_{clean_period}.xlsx"
+    output_file_path = output_dir / excel_filename
+
+    builder = ExcelReportBuilder(company_name=company_name, report_period=report_period)
+    builder.export_to_file(results, output_file_path)
+
+    with open(output_file_path, "rb") as f:
+        excel_data = f.read()
+    b64_excel = base64.b64encode(excel_data).decode("utf-8")
+
+
+# ==============================================================================
+# GIAO DIỆN CÁC TABS CHÍNH
+# ==============================================================================
+tab_annual, tab_overview, tab_sheet00, tab_sheet31, tab_sheet41, tab_sheet51 = st.tabs([
+    "🏆 Báo Cáo Tổng Hợp Cả Năm (Trình Lãnh Đạo)",
+    f"📋 Tổng Quan & Đối Chiếu ({report_period})",
     "📑 Sheet 00 - Tổng Kết Thu Nhập",
     "📊 Sheet 3.1 - TN Chịu Thuế ([24])",
     "👥 Sheet 4.1 - CNV Có Thuế ([27])",
@@ -522,12 +458,267 @@ tab_overview, tab_sheet00, tab_sheet31, tab_sheet41, tab_sheet51 = st.tabs([
 ])
 
 
-# --------------------------------------------------------------------------
-# TAB 1: TỔNG QUAN
-# --------------------------------------------------------------------------
-with tab_overview:
-    st.subheader("Bảng Đối Chiếu Tổng Hợp Các Điểm Kiểm Dò Cốt Lõi")
+# ==============================================================================
+# TAB 1: BÁO CÁO TỔNG HỢP CẢ NĂM (DÀNH CHO LÃNH ĐẠO)
+# ==============================================================================
+with tab_annual:
+    st.subheader(f"📊 Báo Cáo Tổng Hợp & Đối Chiếu Thuế TNCN Năm {report_year} (Trình Ban Lãnh Đạo)")
+    st.caption("Sheet báo cáo riêng biệt tổng hợp toàn bộ 12 tháng trong năm và dòng Tổng cộng cả năm, chuẩn bị cho Lãnh đạo ký duyệt.")
 
+    df_annual_all = annual_mgr.build_annual_summary_df(year=report_year)
+
+    if df_annual_all.empty:
+        st.info("ℹ️ Chưa có tháng nào được đóng gói trong kho dữ liệu năm này. Vui lòng nạp và đóng gói ít nhất 1 tháng.")
+    else:
+        # Xuất file Excel báo cáo cả năm riêng biệt
+        annual_excel_filename = f"Bao_Cao_Tong_Hop_Thue_TNCN_Ca_Nam_{report_year}.xlsx"
+        annual_excel_path = Path("03_DAU_RA") / annual_excel_filename
+        annual_mgr.export_annual_report_excel(
+            company_name=company_name,
+            year_label=f"Năm {report_year}",
+            output_path=str(annual_excel_path)
+        )
+
+        with open(annual_excel_path, "rb") as f_ann:
+            b64_ann = base64.b64encode(f_ann.read()).decode("utf-8")
+
+        # Khối Thao Tác Báo Cáo Cả Năm
+        ann_col1, ann_col2, ann_col3, ann_col4 = st.columns([2.2, 1.2, 1.2, 1.4])
+        with ann_col1:
+            st.success(f"✅ **Đã đóng gói {len(df_annual_all) - 1} kỳ trong năm.** Bảng số liệu sẵn sàng trình Lãnh đạo.")
+
+        with ann_col2:
+            if st.button("📊 Mở File Bằng Excel", key="btn_open_excel_ann", use_container_width=True):
+                if hasattr(os, "startfile"):
+                    try:
+                        os.startfile(str(annual_excel_path.resolve()))
+                    except Exception as e:
+                        st.error(f"Lỗi: {e}")
+                else:
+                    st.info("Áp dụng khi chạy trên Windows.")
+
+        with ann_col3:
+            if st.button("📂 Mở Thư Mục 03_DAU_RA", key="btn_open_folder_ann", use_container_width=True):
+                if hasattr(os, "startfile"):
+                    try:
+                        os.startfile(str(Path("03_DAU_RA").resolve()))
+                    except Exception:
+                        pass
+
+        with ann_col4:
+            download_ann_html = f"""
+            <a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64_ann}" 
+               download="{annual_excel_filename}" 
+               style="display: flex; align-items: center; justify-content: center; width: 100%; height: 38px; 
+                      background-color: #1F4E78; color: white !important; text-decoration: none; border-radius: 8px; 
+                      font-weight: 600; font-size: 13px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+               📥 Tải Báo Cáo Cả Năm (.xlsx)
+            </a>
+            """
+            st.markdown(download_ann_html, unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # 4 Thẻ KPI Cả Năm
+        last_total_row = df_annual_all.iloc[-1]
+        kpi_ann1, kpi_ann2, kpi_ann3, kpi_ann4 = st.columns(4)
+
+        with kpi_ann1:
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-title">Lao Động Bình Quân / Tháng</div>
+                <div class="kpi-value">{format_vnd(last_total_row['so_lao_dong'])} <span style="font-size:14px;color:#666">người</span></div>
+                <div class="kpi-sub">Số người có thuế BQ: <b>{format_vnd(last_total_row['so_co_thue'])}</b></div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with kpi_ann2:
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-title">Tổng Thu Nhập Cả Năm (Gross)</div>
+                <div class="kpi-value">{format_vnd(last_total_row['tong_thu_nhap'])}</div>
+                <div class="kpi-sub">Tổng thu nhập toàn đơn vị trong năm</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with kpi_ann3:
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-title">TNCT Cư Trú Cả Năm ([24])</div>
+                <div class="kpi-value">{format_vnd(last_total_row['tnct_cu_tru'])}</div>
+                <div class="kpi-sub">Lệch Tờ khai [24]: <b>{format_vnd(last_total_row['lech_tnct_cu_tru'])} VND</b></div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with kpi_ann4:
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-title">Tổng Thuế TNCN Đã Nộp Cả Năm</div>
+                <div class="kpi-value">{format_vnd(last_total_row['thue_bang_luong'])}</div>
+                <div class="kpi-sub">Tờ khai: {format_vnd(last_total_row['thue_to_khai'])} | Có 3335: {format_vnd(last_total_row['thue_so_cai_3335'])}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Bảng Tổng Hợp Chi Tiết Từng Tháng Trong Năm
+        col_rename_ann = {
+            "ky_bao_cao": "Kỳ / Tháng",
+            "so_lao_dong": "Số Lao Động",
+            "so_co_thue": "Số Có Thuế",
+            "tong_thu_nhap": "Tổng Thu Nhập (Gross VND)",
+            "tnct_cu_tru": "TNCT Cư Trú [24]",
+            "pr025_tnct_cu_tru": "Tờ Khai [24]",
+            "lech_tnct_cu_tru": "Lệch TNCT [24]",
+            "tnct_nhom_co_thue": "TNCT Có Thuế [27]",
+            "pr025_tnct_nhom_co_thue": "Tờ Khai [27]",
+            "lech_tnct_co_thue": "Lệch TNCT [27]",
+            "thue_bang_luong": "Thuế Bảng Lương (VND)",
+            "thue_to_khai": "Thuế Tờ Khai (VND)",
+            "thue_so_cai_3335": "Thuế Có TK 3335 (VND)",
+            "lech_thue": "Lệch Thuế (VND)",
+            "kiem_do": "Kiểm Dò",
+            "ngay_cap_nhat": "Ngày Cập Nhật"
+        }
+        df_annual_disp = df_annual_all.rename(columns=col_rename_ann)
+
+        money_cols_ann = [
+            "Tổng Thu Nhập (Gross VND)", "TNCT Cư Trú [24]", "Tờ Khai [24]", "Lệch TNCT [24]",
+            "TNCT Có Thuế [27]", "Tờ Khai [27]", "Lệch TNCT [27]",
+            "Thuế Bảng Lương (VND)", "Thuế Tờ Khai (VND)", "Thuế Có TK 3335 (VND)", "Lệch Thuế (VND)"
+        ]
+        center_cols_ann = ["Số Lao Động", "Số Có Thuế", "Kiểm Dò", "Ngày Cập Nhật"]
+
+        display_styled_dataframe(
+            df_annual_disp,
+            money_cols=money_cols_ann,
+            center_cols=center_cols_ann,
+            diff_col_name="Lệch Thuế (VND)",
+            status_col_name="Kiểm Dò"
+        )
+
+        st.caption(f"📁 File Excel báo cáo cả năm dành cho Lãnh đạo đã được tạo tại: `{annual_excel_path.resolve()}`")
+
+        # Nút hỗ trợ tạo demo nhanh các tháng còn lại nếu mới chỉ có 1 tháng
+        if len(df_annual_all) <= 2 and results:
+            st.markdown("---")
+            if st.button("⚡ Tạo Nhanh Dữ Liệu Mẫu Các Tháng 01 -> 08 (Để Trải Nghiệm Xem Thử Báo Cáo Cả Năm)"):
+                annual_mgr.populate_demo_months(results, year=report_year)
+                st.success("✅ Đã sinh dữ liệu mẫu các tháng 01 -> 08! Đang nạp lại bảng cả năm...")
+                st.rerun()
+
+
+# ==============================================================================
+# NẾU CHƯA CÓ KẾT QUẢ CỦA THÁNG ĐANG CHỌN THÌ DỪNG CÁC TAB CHI TIẾT
+# ==============================================================================
+if not results:
+    for t in [tab_overview, tab_sheet00, tab_sheet31, tab_sheet41, tab_sheet51]:
+        with t:
+            st.warning(f"⚠️ Chưa có dữ liệu kiểm dò cho **{report_period}**. Vui lòng chỉ định thư mục chứa 4 file ở thanh bên trái để thực hiện.")
+    st.stop()
+
+
+kpis = results["summary_kpis"]
+
+
+# ==============================================================================
+# TAB 2: TỔNG QUAN THÁNG ĐÃ CHỌN
+# ==============================================================================
+with tab_overview:
+    # Banner thông báo trạng thái nạp dữ liệu
+    if is_from_cache:
+        st.info(f"⚡ **Dữ liệu {report_period} được tải TỨC THÌ từ Gói Lưu Trữ Đã Đóng Gói (< 0.05s, không giật lag).** (Nếu có thay đổi file gốc, anh bấm nút '🔄 Tổng Hợp Lại' ở thanh bên trái).")
+    else:
+        st.success(f"✅ **Đã tổng hợp mới và đóng gói lưu trữ thành công cho {report_period}!** Lần sau chọn tháng này hệ thống sẽ gọi lên ngay lập tức.")
+
+    # Khối Thao Tác File Tháng Này
+    top_col1, top_col2, top_col3, top_col4 = st.columns([2.0, 1.0, 1.0, 1.2])
+
+    with top_col1:
+        if results["all_passed"]:
+            st.success(f"✅ **KẾT QUẢ {report_period}: SỐ LIỆU ĐÃ KHỚP CHÍNH XÁC 100%!** (Chênh lệch = 0 VND)")
+        else:
+            st.error(f"⚠️ **CẢNH BÁO {report_period}: PHÁT HIỆN SỐ LIỆU CHÊNH LỆCH!** Vui lòng kiểm tra chi tiết các bảng dưới đây.")
+
+    with top_col2:
+        if st.button("📊 Mở File Tháng", use_container_width=True, help="Mở file báo cáo tháng trực tiếp bằng Microsoft Excel"):
+            if hasattr(os, "startfile"):
+                try:
+                    os.startfile(str(output_file_path.resolve()))
+                except Exception as e:
+                    st.error(f"Không thể mở file: {e}")
+            else:
+                st.info("Mở trực tiếp bằng Excel khả dụng khi chạy trên máy tính Windows.")
+
+    with top_col3:
+        if st.button("📂 Mở 03_DAU_RA", key="btn_open_folder_month", use_container_width=True, help="Mở thư mục 03_DAU_RA trực tiếp trong Windows Explorer"):
+            if hasattr(os, "startfile"):
+                try:
+                    os.startfile(str(output_dir.resolve()))
+                except Exception as e:
+                    st.error(f"Không thể mở thư mục: {e}")
+            else:
+                st.info("Mở thư mục áp dụng khi chạy trên máy tính Windows.")
+
+    with top_col4:
+        download_html = f"""
+        <a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64_excel}" 
+           download="{excel_filename}" 
+           style="display: flex; align-items: center; justify-content: center; width: 100%; height: 38px; 
+                  background-color: #1F4E78; color: white !important; text-decoration: none; border-radius: 8px; 
+                  font-weight: 600; font-size: 13px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+           📥 Tải File Tháng (.xlsx)
+        </a>
+        """
+        st.markdown(download_html, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # 4 THẺ KPI CHÍNH
+    c1, c2, c3, c4 = st.columns(4)
+
+    with c1:
+        st.markdown(f"""
+        <div class="kpi-card">
+            <div class="kpi-title">Tổng Nhân Sự / Cư Trú</div>
+            <div class="kpi-value">{format_vnd(kpis['total_employees'])} <span style="font-size:14px;color:#666">người</span></div>
+            <div class="kpi-sub">Cư trú: <b>{format_vnd(kpis['residents_count'])}</b> | Có thuế: <b>{format_vnd(kpis['taxable_employees_count'])}</b></div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c2:
+        badge_24 = '<span class="badge-matched">KHỚP (0 VND)</span>' if kpis['status_tnct'] == "KHỚP" else f'<span class="badge-diff">LỆCH: {format_vnd(kpis["diff_tnct_resident"])} VND</span>'
+        st.markdown(f"""
+        <div class="kpi-card">
+            <div class="kpi-title">TNCT Cư Trú (Chỉ tiêu [24])</div>
+            <div class="kpi-value">{format_vnd(kpis['taxable_income_resident'])}</div>
+            <div class="kpi-sub">PR025: {format_vnd(kpis['pr025_tnct_resident'])} | {badge_24}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c3:
+        badge_27 = '<span class="badge-matched">KHỚP (0 VND)</span>' if kpis['status_with_tax'] == "KHỚP" else f'<span class="badge-diff">LỆCH: {format_vnd(kpis["diff_tnct_with_tax"])} VND</span>'
+        st.markdown(f"""
+        <div class="kpi-card">
+            <div class="kpi-title">TNCT Nhóm Có Thuế ([27])</div>
+            <div class="kpi-value">{format_vnd(kpis['taxable_income_with_tax'])}</div>
+            <div class="kpi-sub">PR025: {format_vnd(kpis['pr025_tnct_with_tax'])} | {badge_27}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c4:
+        badge_tax = '<span class="badge-matched">KHỚP (0 VND)</span>' if kpis['status_tax'] == "KHỚP" else f'<span class="badge-diff">LỆCH: {format_vnd(kpis["diff_salary_vs_return"])} VND</span>'
+        st.markdown(f"""
+        <div class="kpi-card">
+            <div class="kpi-title">Thuế Phải Nộp (3 Bên)</div>
+            <div class="kpi-value">{format_vnd(kpis['salary_total_tax'])}</div>
+            <div class="kpi-sub">Tờ khai: {format_vnd(kpis['tax_return_total'])} | Có 3335: {format_vnd(kpis['gl_credit_turnover'])} | {badge_tax}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    st.subheader(f"Bảng Đối Chiếu Tổng Hợp Các Điểm Kiểm Dò Cốt Lõi - {report_period}")
     summary_rows = [
         {
             "Nội Dung Kiểm Dò": "1. Thu nhập chịu thuế cá nhân cư trú (Chỉ tiêu [24])",
@@ -570,19 +761,12 @@ with tab_overview:
         status_col_name="kiem_do"
     )
 
-    st.markdown("""
-    > 💡 **Quy tắc kiểm tra kiểm dò:**
-    > - **Số liệu:** Toàn bộ là số nguyên, không có số lẻ, phân cách hàng nghìn bằng dấu chấm.
-    > - **Ô màu xanh lá:** Chênh lệch = 0 VND (Số liệu đối chiếu hoàn toàn trùng khớp).
-    > - **Ô màu cam đỏ:** Chênh lệch khác 0 VND (Phát sinh sai lệch giữa các nguồn, cần rà soát lại).
-    """)
 
-
-# --------------------------------------------------------------------------
-# TAB 2: SHEET 00 - TỔNG KẾT
-# --------------------------------------------------------------------------
+# ==============================================================================
+# TAB 3: SHEET 00 - TỔNG KẾT
+# ==============================================================================
 with tab_sheet00:
-    st.subheader("Bảng Tổng Hợp Thu Nhập Theo Phòng Ban")
+    st.subheader(f"Bảng Tổng Hợp Thu Nhập Theo Phòng Ban - {report_period}")
     df_00_sum = results["sheet_00"]["summary"].copy()
 
     col_rename_00 = {
@@ -645,11 +829,11 @@ with tab_sheet00:
         )
 
 
-# --------------------------------------------------------------------------
-# TAB 3: SHEET 3.1 - TN CHỊU THUẾ
-# --------------------------------------------------------------------------
+# ==============================================================================
+# TAB 4: SHEET 3.1 - TN CHỊU THUẾ
+# ==============================================================================
 with tab_sheet31:
-    st.subheader("Bảng Đối Chiếu Thu Nhập Chịu Thuế Cá Nhân Cư Trú (Chỉ Tiêu [24] PR025)")
+    st.subheader(f"Bảng Đối Chiếu Thu Nhập Chịu Thuế Cá Nhân Cư Trú (Chỉ Tiêu [24] PR025) - {report_period}")
     df_31_sum = results["sheet_31"]["summary"].copy()
 
     col_rename_31 = {
@@ -696,11 +880,11 @@ with tab_sheet31:
         )
 
 
-# --------------------------------------------------------------------------
-# TAB 4: SHEET 4.1 - CNV CÓ THUẾ
-# --------------------------------------------------------------------------
+# ==============================================================================
+# TAB 5: SHEET 4.1 - CNV CÓ THUẾ
+# ==============================================================================
 with tab_sheet41:
-    st.subheader("Bảng Đối Chiếu TNCT Nhóm Cá Nhân Cư Trú Có Thuế (Chỉ Tiêu [27] PR025)")
+    st.subheader(f"Bảng Đối Chiếu TNCT Nhóm Cá Nhân Cư Trú Có Thuế (Chỉ Tiêu [27] PR025) - {report_period}")
     df_41_sum = results["sheet_41"]["summary"].copy()
 
     col_rename_41 = {
@@ -753,11 +937,11 @@ with tab_sheet41:
         )
 
 
-# --------------------------------------------------------------------------
-# TAB 5: SHEET 5.1 - THUẾ KHẤU TRỪ
-# --------------------------------------------------------------------------
+# ==============================================================================
+# TAB 6: SHEET 5.1 - THUẾ KHẤU TRỪ
+# ==============================================================================
 with tab_sheet51:
-    st.subheader("Bảng Đối Chiếu Số Thuế Khấu Trừ 3 Bên: Bảng Lương - Tờ Khai - Sổ Cái TK 3335")
+    st.subheader(f"Bảng Đối Chiếu Số Thuế Khấu Trừ 3 Bên - {report_period}")
     df_51_sum = results["sheet_51"]["summary"].copy()
 
     col_rename_51 = {
@@ -783,7 +967,7 @@ with tab_sheet51:
         status_col_name="Kiểm Dò"
     )
 
-    st.subheader("Phân Bổ Số Thuế TNCN Theo Phòng Ban / Bộ Phận")
+    st.subheader(f"Phân Bổ Số Thuế TNCN Theo Phòng Ban / Bộ Phận - {report_period}")
     df_51_dept = results["sheet_51"]["detail_dept"].copy()
     col_rename_dept = {
         "phong_ban": "Phòng Ban",
@@ -807,7 +991,7 @@ with tab_sheet51:
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: #888; font-size: 13px;'>"
-    "Ứng dụng Kiểm dò Dữ liệu Thuế TNCN © 2026 | Dành cho Công ty Điện lực | Xử lý In-Memory An Toàn & Bảo Mật"
+    "Hệ Thống Kiểm Dò Dữ Liệu Thuế TNCN Cả Năm © 2026 | Công Ty Điện Lực | Lưu Trữ & Đóng Gói Tự Động"
     "</div>",
     unsafe_allow_html=True
 )

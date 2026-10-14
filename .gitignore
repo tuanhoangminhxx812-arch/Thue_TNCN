@@ -18,3 +18,7 @@ env/
 
 # Streamlit config (optional local)
 .streamlit/secrets.toml
+
+# Generated reports
+03_DAU_RA/*.xlsx
+!03_DAU_RA/.gitkeep
