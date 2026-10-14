@@ -1,0 +1,20 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary Excel lock files
+~$*.xlsx
+~$*.xls
+
+# Virtual environments
+venv/
+env/
+.env/
+
+# IDE files
+.vscode/
+.idea/
+
+# Streamlit config (optional local)
+.streamlit/secrets.toml

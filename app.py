@@ -339,12 +339,15 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("#### 📤 Thư Mục Xuất Báo Cáo:")
     if st.button("📂 Mở Thư Mục 03_DAU_RA", key="btn_open_out_sidebar", use_container_width=True):
-        try:
-            out_p = Path("03_DAU_RA").resolve()
-            out_p.mkdir(parents=True, exist_ok=True)
-            os.startfile(str(out_p))
-        except Exception:
-            pass
+        if hasattr(os, "startfile"):
+            try:
+                out_p = Path("03_DAU_RA").resolve()
+                out_p.mkdir(parents=True, exist_ok=True)
+                os.startfile(str(out_p))
+            except Exception:
+                pass
+        else:
+            st.info("💡 Tính năng mở thư mục trực tiếp áp dụng khi chạy trên máy tính Windows. Trên Streamlit Cloud, anh tải file qua nút 'Tải File (.xlsx)' nhé!")
 
 
 # Nếu chưa đủ 4 file, hiển thị hướng dẫn chi tiết
@@ -429,17 +432,23 @@ with top_col1:
 
 with top_col2:
     if st.button("📊 Mở Bằng Excel", use_container_width=True, help="Mở file báo cáo trực tiếp bằng Microsoft Excel trên máy tính"):
-        try:
-            os.startfile(str(output_file_path.resolve()))
-        except Exception as e:
-            st.error(f"Không thể mở file: {e}")
+        if hasattr(os, "startfile"):
+            try:
+                os.startfile(str(output_file_path.resolve()))
+            except Exception as e:
+                st.error(f"Không thể mở file: {e}")
+        else:
+            st.info("Mở trực tiếp bằng Excel khả dụng khi chạy trên máy tính Windows.")
 
 with top_col3:
     if st.button("📂 Mở 03_DAU_RA", use_container_width=True, help="Mở thư mục 03_DAU_RA trực tiếp trong Windows Explorer"):
-        try:
-            os.startfile(str(output_dir.resolve()))
-        except Exception as e:
-            st.error(f"Không thể mở thư mục: {e}")
+        if hasattr(os, "startfile"):
+            try:
+                os.startfile(str(output_dir.resolve()))
+            except Exception as e:
+                st.error(f"Không thể mở thư mục: {e}")
+        else:
+            st.info("Mở thư mục áp dụng khi chạy trên máy tính Windows.")
 
 with top_col4:
     # Nút tải trực tiếp qua HTML5 download attribute (chuẩn file .xlsx 100%, không bao giờ bị đổi thành UUID)
